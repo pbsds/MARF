@@ -1,0 +1,9 @@
+__pycache__
+/data/models/
+/data/archives/
+/experiments/logdir/
+/.env/
+/.direnv/
+*.zip
+*.sh
+default.yaml # pandoc preview enhanced

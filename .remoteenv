@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# this file is used by remote-cli
+
+# Assumes repo is put in a "remotes/name-hash" folder,
+# the default behaviour of remote-exec
+REMOTES_DIR="$(dirname $(pwd))"
+LOCAL_ENV_NAME="py310-$(basename $(pwd))"
+LOCAL_ENV_DIR="$REMOTES_DIR/envs/$REMOTE_ENV_NAME"
+
+#export XDG_CACHE_HOME="$LOCAL_ENV_DIR/xdg/cache"
+#export XDG_DATA_HOME="$LOCAL_ENV_DIR/xdg/share"
+#export XDG_STATE_HOME="$LOCAL_ENV_DIR/xdg/state"
+#mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+export XDG_CONFIG_HOME="$LOCAL_ENV_DIR/xdg/config"
+mkdir -p "$XDG_CONFIG_HOME"
+
+
+export PYOPENGL_PLATFORM=egl # makes pyrender work headless
+#export PYOPENGL_PLATFORM=osmesa # makes pyrender work headless
+export SDL_VIDEODRIVER=dummy # pygame
+
+source .localenv
+
+# SLURM logs output dir
+if command -v sbatch >/dev/null; then
+	mkdir -p slurm_logs
+	test -L experiments/logdir/slurm_logs ||
+		ln -s ../../slurm_logs experiments/logdir/
+fi

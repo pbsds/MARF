@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# =======================
+# bootstrap a venv
+# =======================
+
+LOCAL_ENV_NAME="py310-$(basename $(pwd))"
+LOCAL_ENV_DIR="$(pwd)/.env/$LOCAL_ENV_NAME"
+mkdir -p "$LOCAL_ENV_DIR"
+
+# make configs and caches a part of venv
+export POETRY_CACHE_DIR="$LOCAL_ENV_DIR/xdg/cache/poetry"
+export PIP_CACHE_DIR="$LOCAL_ENV_DIR/xdg/cache/pip"
+mkdir -p "$POETRY_CACHE_DIR" "$PIP_CACHE_DIR"
+
+#export POETRY_VIRTUALENVS_IN_PROJECT=true # store venv in ./.venv/
+#export POETRY_VIRTUALENVS_CREATE=false # install globally
+export SETUPTOOLS_USE_DISTUTILS=stdlib # https://github.com/pre-commit/pre-commit/issues/2178#issuecomment-1002163763
+export IFIELD_PRETTY_TRACEBACK=1
+#export SHOW_LOCALS=1 # locals in tracebacks
+export PYTHON_KEYRING_BACKEND="keyring.backends.null.Keyring"
+
+# ensure we have the correct python and poetry. Bootstrap via conda if missing
+if ! command -v python310 >/dev/null || ! command -v poetry >/dev/null; then
+	source .localenv-bootstrap-conda
+
+	if command -v mamba >/dev/null; then
+		CONDA=mamba
+	elif command -v conda >/dev/null; then
+		CONDA=conda
+	else
+		>&2 echo "ERROR: 'poetry' nor 'conda'/'mamba' could be found!"
+		exit 1
+	fi
+
+	function verbose {
+	    echo +"$(printf " %q" "$@")"
+	    "$@"
+	}
+
+	if ! ($CONDA env list | grep -q "^$LOCAL_ENV_NAME "); then
+		verbose $CONDA create --yes --name "$LOCAL_ENV_NAME" -c conda-forge \
+			python==3.10.8 poetry==1.3.1 #python-lsp-server
+		true
+	fi
+
+	verbose conda activate "$LOCAL_ENV_NAME" || exit $?
+	#verbose $CONDA activate "$LOCAL_ENV_NAME" || exit $?
+
+	unset -f verbose
+fi
+
+
+# enter poetry venv
+# source .envrc
+poetry run true # ensure venv exists
+#source "$(poetry env info -p)/bin/activate"
+export VIRTUAL_ENV=$(poetry env info --path)
+export POETRY_ACTIVE=1
+export PATH="$VIRTUAL_ENV/bin":"$PATH"
+# NOTE: poetry currently reuses and populates the conda venv.
+#       See: https://github.com/python-poetry/poetry/issues/1724
+
+
+# ensure output dirs exist
+mkdir -p experiments/logdir
+
+# first-time-setup poetry
+if ! command -v fix-my-functions >/dev/null; then
+	poetry install
+fi

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# =======================
+# bootstrap a conda venv
+# =======================
+
+CONDA_ENV_DIR="${LOCAL_ENV_DIR:-$(pwd)/.conda310}"
+mkdir -p "$CONDA_ENV_DIR"
+#touch "$HOME/.Xauthority"
+
+MINICONDA_PY310_URL="https://repo.anaconda.com/miniconda/Miniconda3-py310_22.11.1-1-Linux-x86_64.sh"
+MINICONDA_PY310_HASH="00938c3534750a0e4069499baf8f4e6dc1c2e471c86a59caa0dd03f4a9269db6"
+
+# Check if conda is available
+if ! command -v conda >/dev/null; then
+	export PATH="$CONDA_ENV_DIR/conda/bin:$PATH"
+fi
+
+# Check again if conda is available, install miniconda if not
+if ! command -v conda >/dev/null; then
+	(set -e #x
+		function verbose {
+			echo +"$(printf " %q" "$@")"
+			"$@"
+		}
+
+		if command -v curl >/dev/null; then
+			verbose curl -sLo "$CONDA_ENV_DIR/miniconda_py310.sh" "$MINICONDA_PY310_URL"
+		elif command -v wget >/dev/null; then
+			verbose wget -O "$CONDA_ENV_DIR/miniconda_py310.sh" "$MINICONDA_PY310_URL"
+		else
+			echo "ERROR: unable to download miniconda!"
+			exit 1
+		fi
+
+		verbose test "$(sha256sum "$CONDA_ENV_DIR/miniconda_py310.sh")" = "$MINICONDA_PY310_HASH"
+		verbose chmod +x "$CONDA_ENV_DIR/miniconda_py310.sh"
+
+		verbose "$CONDA_ENV_DIR/miniconda_py310.sh" -b -u -p "$CONDA_ENV_DIR/conda"
+		verbose rm "$CONDA_ENV_DIR/miniconda_py310.sh"
+
+		eval "$(conda shell.bash hook)" # basically `conda init`, without modifying .bashrc
+		verbose conda install --yes --name base mamba -c conda-forge
+
+	) || exit $?
+fi
+
+unset CONDA_ENV_DIR
+unset MINICONDA_PY310_URL
+unset MINICONDA_PY310_HASH
+
+# Enter conda environment
+eval "$(conda shell.bash hook)" # basically `conda init`, without modifying .bashrc

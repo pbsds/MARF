@@ -1,0 +1,80 @@
+[tool.poetry]
+name = "ifield"
+version = "0.2.0"
+description = ""
+authors = ["Peder Bergebakken Sundt <pbsds@hotmail.com>"]
+
+[build-system]
+requires = ["poetry-core>=1.0.0", "setuptools>=60"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.11"
+faiss-cpu = "^1.7.3"
+geomloss = "0.2.4" # 0.2.5 has no bdist on pypi
+h5py = "^3.7.0"
+hdf5plugin = "^4.0.1"
+imageio = "^2.23.0"
+jinja2 = "^3.1.2"
+matplotlib = "^3.6.2"
+mesh-to-sdf = {git = "https://github.com/pbsds/mesh_to_sdf", rev = "no_flip_normals"}
+methodtools = "^0.4.5"
+more-itertools = "^9.1.0"
+munch = "^2.5.0"
+numpy = "^1.23.0"
+pyembree = {url = "https://folk.ntnu.no/pederbs/pypy/pep503/pyembree/pyembree-0.2.11-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"}
+pygame = "^2.1.2"
+pykeops = "^2.1.1"
+pytorch3d = [
+	{url = "https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu116_pyt1130/pytorch3d-0.7.2-cp310-cp310-linux_x86_64.whl"},
+]
+pyqt5 = "^5.15.7"
+pyrender = "^0.1.45"
+pytorch-lightning = "^1.8.6"
+pyyaml = "^6.0"
+rich = "^13.3.2"
+rtree = "^1.0.1"
+scikit-image = "^0.19.3"
+scikit-learn = "^1.2.0"
+seaborn = "^0.12.1"
+serve-me-once = "^0.1.2"
+torch = "^1.13.0"
+torchmeta = {git = "https://github.com/pbsds/pytorch-meta", rev = "upgrade"}
+torchviz = "^0.0.2"
+tqdm = "^4.64.1"
+trimesh = "^3.17.1"
+typer = "^0.7.0"
+
+
+[tool.poetry.dev-dependencies]
+python-lsp-server = {extras = ["all"], version = "^1.6.0"}
+fix-my-functions = "^0.1.3"
+imageio-ffmpeg = "^0.4.7"
+jupyter = "^1.0.0"
+jupyter-contrib-nbextensions = "^0.7.0"
+jupyterlab = "^3.5.2"
+jupyterthemes = "^0.20.0"
+llvmlite = "^0.39.1" # only to make poetry install the python3.10 wheels instead of building them
+nbconvert = "<=6.5.0" # https://github.com/jupyter/nbconvert/issues/1894
+numba = "^0.56.4" # only to make poetry install the python3.10 wheels instead of building them
+papermill = "^2.4.0"
+pdoc = "^12.3.0"
+pdoc3 = "^0.10.0"
+ptpython = "^3.0.22"
+pudb = "^2022.1.3"
+remote-exec = {git = "https://github.com/pbsds/remote", rev = "whitespace-push"} # https://github.com/remote-cli/remote/pull/52
+shapely = "^2.0.0"
+sympy = "^1.11.1"
+tensorboard = "^2.11.0"
+visidata = "^2.11"
+
+[tool.poetry.scripts]
+show-schedule       = 'ifield.utils.loss:main'
+show-h5-items       = 'ifield.cli_utils:show_h5_items'
+show-h5-img         = 'ifield.cli_utils:show_h5_img'
+show-h5-scan-cloud  = 'ifield.cli_utils:show_h5_scan_cloud'
+show-model          = 'ifield.cli_utils:show_model'
+download-stanford   = 'ifield.data.stanford.download:cli'
+download-coseg      = 'ifield.data.coseg.download:cli'
+preprocess-stanford = 'ifield.data.stanford.preprocess:cli'
+preprocess-coseg    = 'ifield.data.coseg.preprocess:cli'

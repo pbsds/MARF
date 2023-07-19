@@ -1,0 +1,30 @@
+[push]
+exclude = [
+	"*.egg-info",
+	"*.pyc",
+	".ipynb_checkpoints",
+	".mypy_cache",
+	".remote.toml",
+	".remoteignore.toml",
+	".venv",
+	".wandb",
+	"__pycache__",
+	"data/models",
+	"docs",
+	"experiments/logdir",
+	"poetry.toml",
+	"slurm_logs",
+	"tmp",
+]
+include = []
+
+[pull]
+exclude = [
+	"*",
+]
+include = []
+
+[both]
+exclude = [
+]
+include = []

@@ -1,0 +1,263 @@
+#!/usr/bin/env -S python ./marf.py module
+{% do require_defined("select", select, 0, "$SLURM_ARRAY_TASK_ID") %}{# requires jinja2.ext.do #}
+{% do require_defined("mode", mode, "single", "ablation", "multi", strict=true, exchaustive=true) %}{# requires jinja2.ext.do #}
+{% set counter = itertools.count(start=0, step=1) %}
+{% set do_condition = mode == "multi" %}
+{% set do_ablation  = mode == "ablation" %}
+
+{% set hp_matrix = namespace() %}{# hyper parameter matrix #}
+
+{% set hp_matrix.input_mode                        = [
+  "both",
+  "perp_foot",
+  "plucker",
+] if do_ablation else [ "both" ] %}
+{% set hp_matrix.output_mode                       = ["medial_sphere", "orthogonal_plane"] %}{##}
+{% set hp_matrix.output_mode                       = ["medial_sphere"] %}{##}
+{% set hp_matrix.n_atoms                           = [16, 1, 4, 8, 32, 64] if do_ablation else [16] %}{##}
+{% set hp_matrix.normal_coeff                      = [0.25, 0] if do_ablation else [0.25] %}{##}
+{% set hp_matrix.dataset_item                      = [objname] if objname is defined else (["armadillo", "bunny", "happy_buddha", "dragon", "lucy"] if not do_condition else ["four-legged"]) %}{##}
+{% set hp_matrix.test_val_split_frac               = [0.7] %}{##}
+{% set hp_matrix.lr_coeff                          = [5] %}{##}
+{% set hp_matrix.warmup_epochs                     = [1] if not do_condition else [0.1] %}{##}
+{% set hp_matrix.improve_miss_grads                = [True] %}{##}
+{% set hp_matrix.normalize_ray_dirs                = [True] %}{##}
+{% set hp_matrix.intersection_coeff                = [2, 0] if do_ablation else [2] %}{##}
+{% set hp_matrix.miss_distance_coeff               = [1, 0, 5] if do_ablation else [1] %}{##}
+{% set hp_matrix.relative_out                      = [False] %}{##}
+{% set hp_matrix.hidden_features                   = [512] %}{# like deepsdf and prif #}
+{% set hp_matrix.hidden_layers                     = [8] %}{# like deepsdf, nerf, prif #}
+{% set hp_matrix.nonlinearity                      = ["leaky_relu"] %}{##}
+{% set hp_matrix.omega                             = [30] %}{##}
+{% set hp_matrix.normalization                     = ["layernorm"] %}{##}
+{% set hp_matrix.dropout_percent                   = [1] %}{##}
+{% set hp_matrix.sphere_grow_reg_coeff             = [500, 0, 5000] if do_ablation else [500]  %}{##}
+{% set hp_matrix.geom_init                         = [True, False] if do_ablation else [True] %}{##}
+{% set hp_matrix.loss_inscription                  = [50, 0, 250] if do_ablation else [50] %}{##}
+{% set hp_matrix.atom_centroid_norm_std_reg_negexp = [0, None] if do_ablation else [0] %}{##}
+{% set hp_matrix.curvature_reg_coeff               = [0.2] %}{##}
+{% set hp_matrix.multi_view_reg_coeff              = [1, 2] if do_ablation else [1] %}{##}
+{% set hp_matrix.grad_reg                          = [ "multi_view", "nogradreg" ] if do_ablation else [ "multi_view" ]  %}
+
+{#% for hp in cartesian_hparams(hp_matrix) %}{##}
+{% for hp in ablation_hparams(hp_matrix, caartesian_keys=["output_mode", "dataset_item", "nonlinearity", "test_val_split_frac"]) %}
+
+{% if   hp.output_mode == "orthogonal_plane"%}
+{% if   hp.normal_coeff == 0            %}{% set hp.normal_coeff = 0.25 %}
+{% elif hp.normal_coeff == 0.25         %}{% set hp.normal_coeff = 0 %}
+{% endif %}
+{% if   hp.grad_reg     == "multi_view" %}{% set hp.grad_reg = "nogradreg" %}
+{% elif hp.grad_reg     == "nogradreg"  %}{% set hp.grad_reg = "multi_view" %}
+{% endif %}
+{% endif %}
+
+{# filter bad/uninteresting hparam combos #}
+{% if ( hp.nonlinearity != "sine" and hp.omega != 30 )
+   or ( hp.nonlinearity == "sine" and hp.normalization in ("layernorm", "layernorm_na") )
+   or ( hp.multi_view_reg_coeff     != 1 and "multi_view" not in hp.grad_reg )
+   or ( "curvature" not in hp.grad_reg and hp.curvature_reg_coeff != 0.2 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.input_mode != "both" )
+   or ( hp.output_mode == "orthogonal_plane" and hp.atom_centroid_norm_std_reg_negexp != 0 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.n_atoms != 16 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.sphere_grow_reg_coeff != 500 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.loss_inscription != 50 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.miss_distance_coeff != 1 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.test_val_split_frac != 0.7 )
+   or ( hp.output_mode == "orthogonal_plane" and hp.lr_coeff != 5 )
+   or ( hp.output_mode == "orthogonal_plane" and not hp.geom_init )
+   or ( hp.output_mode == "orthogonal_plane" and not hp.intersection_coeff )
+%}
+  {% continue %}{# requires jinja2.ext.loopcontrols #}
+{% endif %}
+
+{% set index = next(counter) %}
+{% if select is not defined and index > 0 %}---{% endif %}
+{% if select is not defined or int(select) == index %}
+
+trainer:
+  gradient_clip_val : 1.0
+  max_epochs        : 200
+  min_epochs        : 200
+  log_every_n_steps : 20
+
+{% if not do_condition %}
+
+StanfordUVDataModule:
+  obj_names          : ["{{ hp.dataset_item }}"]
+  step               : 4
+  batch_size         : 8
+  val_fraction       : {{ 1-hp.test_val_split_frac }}
+
+{% else %}{# if do_condition #}
+
+CosegUVDataModule:
+  object_sets        : ["{{ hp.dataset_item }}"]
+  step               : 4
+  batch_size         : 8
+  val_fraction       : {{ 1-hp.test_val_split_frac }}
+
+{% endif %}{# if do_condition #}
+
+logging:
+  save_dir : logdir
+  type     : tensorboard
+  project  : ifield
+
+{% autoescape false %}
+{% do require_defined("experiment_name", experiment_name, "single-shape" if do_condition else "multi-shape", strict=true) %}
+{% set input_mode_abbr = hp.input_mode
+  .replace("plucker",    "plkr")
+  .replace("perp_foot",  "prpft")
+%}
+{% set output_mode_abbr = hp.output_mode
+  .replace("medial_sphere",   "marf")
+  .replace("orthogonal_plane",  "prif")
+%}
+experiment_name: experiment-{{ "" if experiment_name is not defined else experiment_name }}
+{#--#}-{{ hp.dataset_item }}
+{#--#}-{{ input_mode_abbr }}2{{ output_mode_abbr }}
+{#--#}
+{%- if hp.output_mode == "medial_sphere" -%}
+  {#--#}-{{ hp.n_atoms }}atom
+  {#--# }-{{ "rel" if hp.relative_out else "norel" }}
+  {#--# }-{{ "e" if hp.improve_miss_grads else "0" }}sqrt
+  {#--#}-{{ int(hp.loss_inscription) if hp.loss_inscription else "no" }}xinscr
+  {#--#}-{{ int(hp.miss_distance_coeff * 10) }}dmiss
+  {#--#}-{{ "geom" if hp.geom_init else "nogeom" }}
+  {#--#}{% if "curvature" in hp.grad_reg %}
+  {#-  -#}-{{ int(hp.curvature_reg_coeff*10) }}crv
+  {#--#}{%- endif -%}
+{%- elif hp.output_mode == "orthogonal_plane" -%}
+  {#--#}
+{%- endif -%}
+{#--#}-{{ int(hp.intersection_coeff*10) }}chit
+{#--#}-{{ int(hp.normal_coeff*100) or "no" }}cnrml
+{#--# }-{{ "do" if hp.normalize_ray_dirs else "no" }}raynorm
+{#--#}-{{ hp.hidden_layers }}x{{ hp.hidden_features }}fc
+{#--#}-{{ hp.nonlinearity or "linear" }}
+{#--#}
+{%- if hp.nonlinearity == "sine" -%}
+  {#--#}-{{ hp.omega }}omega
+  {#--#}
+{%- endif -%}
+{%- if hp.output_mode == "medial_sphere" -%}
+  {#--#}-{{ str(hp.atom_centroid_norm_std_reg_negexp).replace(*"-n") if hp.atom_centroid_norm_std_reg_negexp is not none else 'no' }}minatomstdngxp
+  {#--#}-{{ hp.sphere_grow_reg_coeff }}sphgrow
+  {#--#}
+{%- endif -%}
+{#--#}-{{ int(hp.dropout_percent*10) }}mdrop
+{#--#}-{{ hp.normalization or "nonorm" }}
+{#--#}-{{ hp.grad_reg }}
+{#--#}{% if "multi_view" in hp.grad_reg %}
+{#-  -#}-{{ int(hp.multi_view_reg_coeff*10) }}dmv
+{#--#}{%- endif -%}
+{#--#}-{{ "concat" if do_condition else "nocond" }}
+{#--#}-{{ int(hp.warmup_epochs*100) }}cwu{{ int(hp.lr_coeff*100) }}clr{{ int(hp.test_val_split_frac*100) }}tvs
+{#--#}-{{ gen_run_uid(4) }} # select with --Oselect={{ index }}
+{#--#}
+{##}
+
+{% endautoescape %}
+IntersectionFieldAutoDecoderModel:
+  _extra: # used for easier introspection with jq
+    dataset_item: {{ hp.dataset_item | to_json}}
+    dataset_test_val_frac: {{ hp.test_val_split_frac }}
+    select: {{ index }}
+
+  input_mode                 : {{ hp.input_mode }}  # in {plucker, perp_foot, both}
+  output_mode                : {{ hp.output_mode }} # in {medial_sphere, orthogonal_plane}
+  #latent_features            : 256                  # int
+  #latent_features            : 128                  # int
+  latent_features            : 16                    # int
+  hidden_features            : {{ hp.hidden_features }}                  # int
+  hidden_layers              : {{ hp.hidden_layers }}                    # int
+
+  improve_miss_grads         : {{ bool(hp.improve_miss_grads) | to_json }}
+  normalize_ray_dirs         : {{ bool(hp.normalize_ray_dirs) | to_json }}
+
+  loss_intersection         : {{ hp.intersection_coeff }}
+  loss_intersection_l2      : 0
+  loss_intersection_proj    : 0
+  loss_intersection_proj_l2 : 0
+
+  loss_normal_cossim         : {{ hp.normal_coeff }} * EaseSin(85, 15)
+  loss_normal_euclid         : 0
+  loss_normal_cossim_proj : 0
+  loss_normal_euclid_proj : 0
+
+{% if "multi_view" in hp.grad_reg %}
+  loss_multi_view_reg        : 0.1 * {{ hp.multi_view_reg_coeff }} * Linear(50)
+{% else %}
+  loss_multi_view_reg        : 0
+{% endif %}
+
+{% if hp.output_mode == "orthogonal_plane" %}
+
+  loss_hit_cross_entropy     : 1
+
+{% elif hp.output_mode == "medial_sphere" %}
+
+  loss_hit_nodistance_l1     : 0
+  loss_hit_nodistance_l2     : 100 * {{ hp.miss_distance_coeff }}
+  loss_miss_distance_l1      : 0
+  loss_miss_distance_l2      : 10 * {{ hp.miss_distance_coeff }}
+
+  loss_inscription_hits : {{ 0.4 * hp.loss_inscription }}
+  loss_inscription_miss : 0
+  loss_inscription_hits_l2 : 0
+  loss_inscription_miss_l2 : {{ 6 * hp.loss_inscription }}
+
+  loss_sphere_grow_reg       : 1e-6 * {{ hp.sphere_grow_reg_coeff }}    # constant
+  loss_atom_centroid_norm_std_reg: (0.09*(1-Linear(40)) + 0.01) * {{ 10**(-hp.atom_centroid_norm_std_reg_negexp) if hp.atom_centroid_norm_std_reg_negexp is not none else 0 }}
+
+{% else %}{#endif hp.output_mode == "medial_sphere" #}
+  THIS IS INVALID YAML
+{% endif %}
+
+  loss_embedding_norm        : 0.01**2 * Linear(30, 0.1)
+
+  opt_learning_rate          : {{ hp.lr_coeff }} * 10**(-4-0.5*EaseSin(170, 30)) # layernorm
+  opt_warmup                 : {{ hp.warmup_epochs }}
+  opt_weight_decay           : 5e-6               # float
+
+{% if hp.output_mode == "medial_sphere" %}
+
+  # MedialAtomNet:
+  n_atoms : {{ hp.n_atoms }} # int
+  {% if hp.geom_init %}
+  final_init_wrr: [0.05, 0.6, 0.1]
+  {% else %}
+  final_init_wrr: null
+  {% endif %}
+
+{% endif %}
+
+
+  # FCBlock:
+  normalization             : {{ hp.normalization or "null" }} # in {null, layernorm, layernorm_na, weightnorm}
+  nonlinearity              : {{ hp.nonlinearity  or "null" }} # in {null, relu, leaky_relu, silu, softplus, elu, selu, sine, sigmoid, tanh }
+  {% set middle = 1 + hp.hidden_layers // 2 + (hp.hidden_layers % 2) %}{##}
+  concat_skipped_layers     : [{{ middle }}, -1]
+{% if do_condition %}
+  concat_conditioned_layers : [0, {{ middle }}]
+{% else %}
+  concat_conditioned_layers : []
+{% endif %}
+
+  # FCLayer:
+  negative_slope : 0.01   # float
+  omega_0        : {{ hp.omega }}    # float
+  residual_mode  : null  # in {null, identity}
+
+{% endif %}{# -Oselect #}
+
+
+{% endfor %}
+
+
+{% set index = next(counter) %}
+# number of possible -Oselect: {{ index }}, from 0 to {{ index-1 }}
+# local: for select in {0..{{ index-1 }}}; do python ... -Omode={{ mode }} -Oselect=$select ... ; done
+# local: for select in {0..{{ index-1 }}}; do python -O {{ argv[0] }} model marf.yaml.j2 -Omode={{ mode }} -Oselect=$select -Oexperiment_name='{{ experiment_name }}' fit --accelerator gpu ; done
+# slurm: sbatch --array=0-{{ index-1 }} runcommand.slurm python ... -Omode={{ mode }} -Oselect=\$SLURM_ARRAY_TASK_ID ...
+# slurm: sbatch --array=0-{{ index-1 }} runcommand.slurm python -O {{ argv[0] }} model marf.yaml.j2 -Omode={{ mode }} -Oselect=\$SLURM_ARRAY_TASK_ID -Oexperiment_name='{{ experiment_name }}' fit --accelerator gpu --devices -1 --strategy ddp
